@@ -1,0 +1,21 @@
+org: danny1robinson
+app: socket-auction
+service: auction-lambdas
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-west-2
+plugins:
+  - serverless-ssm-fetch
+custom:
+  serverlessSsmFetch:
+    DATABASE_ENDPOINT: /database/testdb/endpoint~true
+functions:
+  api:
+    handler: index.handler
+    events:
+      - httpApi:
+          path: /
+          method: get
