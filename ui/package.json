@@ -4,6 +4,8 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "next lint",
+    "tf-build": "tf-next build",
+    "deploy": "tf-next deploy",
     "seed": "node -r dotenv/config ./scripts/seed.js",
     "start": "next start"
   },
@@ -32,9 +34,7 @@
     "dotenv": "^16.3.1",
     "eslint": "^8.52.0",
     "eslint-config-next": "^14.0.0",
-    "prettier": "^3.0.3"
-  },
-  "engines": {
-    "node": ">=18"
+    "prettier": "^3.0.3",
+    "tf-next": "^0.13.2"
   }
 }
