@@ -10,8 +10,8 @@ provider "aws" {
 module "next_serverless" {
   source  = "Nexode-Consulting/nextjs-serverless/aws"
 
-  deployment_name = "nextjs-serverless" #needs to be unique since it will create an s3 bucket
-  region          = "us-west-1" #customize your region
+  deployment_name = "nextjs-serverless-3" #needs to be unique since it will create an s3 bucket
+  region          = "us-west-2" #customize your region
   base_dir        = "./"
 }
 
