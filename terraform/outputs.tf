@@ -195,3 +195,19 @@ output "db_default_master_user_secret_arn" {
   description = "The ARN of the master user secret (Only available when manage_master_user_password is set to true)"
   value       = module.db_default.db_instance_master_user_secret_arn
 }
+
+output "cognito_client_ids" {
+  description = "cognito_client_ids"
+  value       = module.aws_cognito.client_ids
+}
+
+output "cognito_client_stuff" {
+  description = "cognito_client_stuff"
+  sensitive = true
+  value       = module.aws_cognito.client_secrets
+}
+
+output "cognito_issuer" {
+  description = "cognito_issuer"
+  value       = module.aws_cognito.endpoint
+}
