@@ -1,12 +1,19 @@
 org: danny1robinson
 app: socket-auction
 service: auction-lambdas
-frameworkVersion: '3'
+frameworkVersion: "3"
+
+# https://github.com/liberocks/medium-websocket-serverless
+# ^ this looks like a cleaner option.
 
 provider:
   name: aws
   runtime: nodejs18.x
   region: us-west-2
+  environment:
+    REDIS_HOST: ${env:REDIS_HOST}
+    REDIS_PORT: ${env:REDIS_PORT}
+    REDIS_PASSWORD: ${env:REDIS_PASSWORD}
 plugins:
   - serverless-ssm-fetch
 custom:
@@ -19,3 +26,26 @@ functions:
       - httpApi:
           path: /
           method: get
+  authorizer:
+    handler: src/authorizer.handler
+
+  broadcast:
+    handler: src/broadcast.handler
+
+  # See https://serverless.com/framework/docs/providers/aws/events/websocket/
+  # for full details
+  connect:
+    handler: functions/connect.handler
+    events:
+      - websocket:
+          route: $connect
+  default:
+    handler: functions/default.handler
+    events:
+      - websocket:
+          route: $default
+  disconnect:
+    handler: functions/disconnect.handler
+    events:
+      - websocket:
+          route: $disconnect
