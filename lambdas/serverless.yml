@@ -10,15 +10,24 @@ provider:
   name: aws
   runtime: nodejs18.x
   region: us-west-2
+  timeout: 10
+  iam:
+    role: arn:aws:iam::033765504828:role/SocketAuctionApi
+  vpc:
+    securityGroupIds:
+      - ${file(./.env.js):AWS_SG}
+    subnetIds:
+      - ${file(./.env.js):VPC_SUBNET1}
+      - ${file(./.env.js):VPC_SUBNET2}
+      - ${file(./.env.js):VPC_SUBNET3}
+      - ${file(./.env.js):VPC_SUBNET4}
   environment:
-    REDIS_HOST: ${env:REDIS_HOST}
-    REDIS_PORT: ${env:REDIS_PORT}
-    REDIS_PASSWORD: ${env:REDIS_PASSWORD}
-plugins:
-  - serverless-ssm-fetch
-custom:
-  serverlessSsmFetch:
-    DATABASE_ENDPOINT: /database/testdb/endpoint~true
+    REDIS_CLUSTER_ENDPOINT: ${file(./.env.js):REDIS_CLUSTER_ENDPOINT}
+# plugins:
+#   - serverless-ssm-fetch
+# custom:
+#   serverlessSsmFetch:
+#     DATABASE_ENDPOINT: /database/testdb/endpoint~true
 functions:
   api:
     handler: index.handler
@@ -26,14 +35,7 @@ functions:
       - httpApi:
           path: /
           method: get
-  authorizer:
-    handler: src/authorizer.handler
-
-  broadcast:
-    handler: src/broadcast.handler
-
   # See https://serverless.com/framework/docs/providers/aws/events/websocket/
-  # for full details
   connect:
     handler: functions/connect.handler
     events:
