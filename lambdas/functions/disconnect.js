@@ -1,4 +1,4 @@
-const { Connection } = require("../libs/connections");
+const { Connection } = require("../lib/connections");
 
 let connection;
 const host = process.env.REDIS_HOST;
@@ -8,7 +8,7 @@ const password = process.env.REDIS_PASSWORD;
 exports.handler = async (event, context, callback) => {
   if (!connection) {
     connection = new Connection({ host, port, password });
-    connection.init(event);
+    await connection.init(event);
   }
 
   await connection.removeConnection(
