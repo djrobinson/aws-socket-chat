@@ -20,15 +20,16 @@ module "vpc" {
 
 ################# Below is new stuff that should enable lambdas to access ###########
 
+# What should ingress be in this case?
 resource "aws_security_group" "ws_lambda_sg" {
   name        = "ws_lambda_sg"
   description = "Allow TLS inbound traffic"
   vpc_id      = module.vpc.vpc_id
 
   ingress {
-    description      = "REDIS PORT from LAMBDA"
-    from_port        = 6379
-    to_port          = 6379
+    description      = "TLS from VPC"
+    from_port        = 443
+    to_port          = 443
     protocol         = "tcp"
     security_groups      = [module.vpc.vpc_default_security_group_id]
   }
@@ -58,13 +59,13 @@ resource "aws_ssm_parameter" "lambda_sg_ssm" {
 resource "aws_iam_role" "socket_api_role" {
   name = "SocketAuctionApiRole"
   assume_role_policy = <<EOF
-{
+{ 
   "Version": "2012-10-17",
   "Statement": [
     {
       "Effect": "Allow",
       "Principal": {
-        "Service": "ec2.amazonaws.com"
+        "Service": "lambda.amazonaws.com"
       },
       "Action": "sts:AssumeRole"
     }
@@ -132,15 +133,36 @@ resource "aws_ssm_parameter" "socket_role_arn" {
   value       = "${aws_iam_role.socket_api_role.arn}"
 }
 
-######## TODO: NEED TO REWORK THIS INTO INDIVIDUAL VARS
-
-resource "aws_ssm_parameter" "private_subnets" {
+resource "aws_ssm_parameter" "private_subnet1" {
   depends_on = [module.subnets]
-  for_each    = toset(module.subnets.private_subnet_ids)
   type = "String"
-  name        = "/lambda/subnet/VPC_SUBNET${index(module.subnets.private_subnet_ids, each.value) + 1}"
+  name        = "/lambda/subnet/VPC_SUBNET1"
   description = "subnets that lambdas must attach to"
-  value       = "${each.value}"
+  value       = "${module.subnets.private_subnet_ids[0]}"
+}
+
+resource "aws_ssm_parameter" "private_subnet2" {
+  depends_on = [module.subnets]
+  type = "String"
+  name        = "/lambda/subnet/VPC_SUBNET2"
+  description = "subnets that lambdas must attach to"
+  value       = "${module.subnets.private_subnet_ids[1]}"
+}
+
+resource "aws_ssm_parameter" "private_subnet3" {
+  depends_on = [module.subnets]
+  type = "String"
+  name        = "/lambda/subnet/VPC_SUBNET3"
+  description = "subnets that lambdas must attach to"
+  value       = "${module.subnets.private_subnet_ids[2]}"
+}
+
+resource "aws_ssm_parameter" "private_subnet4" {
+  depends_on = [module.subnets]
+  type = "String"
+  name        = "/lambda/subnet/VPC_SUBNET4"
+  description = "subnets that lambdas must attach to"
+  value       = "${module.subnets.private_subnet_ids[3]}"
 }
 
 ################# Above is new stuff that should enable lambdas to access ###########
@@ -169,7 +191,7 @@ module "redis" {
 
   availability_zones         = []
   vpc_id                     = module.vpc.vpc_id
-  allowed_security_group_ids = [module.vpc.vpc_default_security_group_id]
+  allowed_security_group_ids = [module.vpc.vpc_default_security_group_id, aws_security_group.ws_lambda_sg.id]
   subnets                    = module.subnets.private_subnet_ids
   cluster_size               = 2
   instance_type              = "cache.t3.micro"
@@ -190,6 +212,6 @@ module "redis" {
 resource "aws_ssm_parameter" "lambda_redis_cluster_ssm" {
   name        = "/elasticache/redis/REDIS_CLUSTER_ENDPOINT"
   type = "String"
-  description = "SG for lambda"
-  value       = "${aws_security_group.ws_lambda_sg.id}"
+  description = "Redis cluster for lambda"
+  value       = "${module.redis.endpoint}"
 }
