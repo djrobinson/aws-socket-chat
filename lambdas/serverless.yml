@@ -12,22 +12,24 @@ provider:
   region: us-west-2
   timeout: 10
   iam:
-    role: arn:aws:iam::033765504828:role/SocketAuctionApi
+    role: ${ssm:/lambda/role/socket}
   vpc:
     securityGroupIds:
-      - ${file(./.env.js):AWS_SG}
+      - ${ssm:/lambda/sg/AWS_SG}
     subnetIds:
-      - ${file(./.env.js):VPC_SUBNET1}
-      - ${file(./.env.js):VPC_SUBNET2}
-      - ${file(./.env.js):VPC_SUBNET3}
-      - ${file(./.env.js):VPC_SUBNET4}
-  environment:
-    REDIS_CLUSTER_ENDPOINT: ${file(./.env.js):REDIS_CLUSTER_ENDPOINT}
-# plugins:
-#   - serverless-ssm-fetch
-# custom:
-#   serverlessSsmFetch:
-#     DATABASE_ENDPOINT: /database/testdb/endpoint~true
+      - ${ssm:/lambda/subnet/VPC_SUBNET1}
+      - ${ssm:/lambda/subnet/VPC_SUBNET2}
+      - ${ssm:/lambda/subnet/VPC_SUBNET3}
+      - ${ssm:/lambda/subnet/VPC_SUBNET4}
+# note: at one point I was getting a "can't prefix ssm... error"
+# so I installed this plugin. It might not be necessary. could have been the ~true
+# trying both methods now to check
+# https://github.com/serverless/serverless/issues/10968
+plugins:
+  - serverless-ssm-fetch
+custom:
+  serverlessSsmFetch:
+    REDIS_CLUSTER_ENDPOINT: /elasticache/redis/REDIS_CLUSTER_ENDPOINT
 functions:
   api:
     handler: index.handler

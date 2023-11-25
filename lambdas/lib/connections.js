@@ -70,7 +70,7 @@ class Connection {
           ConnectionId: connectionId, // required
         };
         const command = new PostToConnectionCommand(input);
-        // LOOKS LIKE ASYNC/AWAIT SYNTAX DOESN'T ACTUALLY WORK HERE!
+        // LOOKS LIKE ASYNC/AWAIT SYNTAX DOESN'T ACTUALLY WORK HERE
         // NEEDED TO USE .THEN() TO GET IT TO WORK
         const redisRes = await this.gateway
           .send(command)
