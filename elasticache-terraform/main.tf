@@ -55,10 +55,28 @@ resource "aws_ssm_parameter" "lambda_sg_ssm" {
 
 
 
-
 resource "aws_iam_role" "socket_api_role" {
   name = "SocketAuctionApiRole"
-  assume_role_policy = jsonencode({
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+}
+
+
+resource "aws_iam_policy" "lambda_invoke_policy" {
+  name = "lambda_invoke_policy"
+  policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
@@ -97,10 +115,14 @@ resource "aws_iam_policy" "vpc_access_policy" {
   })
 }
 
-
-resource "aws_iam_role_policy_attachment" "attachment" {
+resource "aws_iam_role_policy_attachment" "attachment1" {
   role       = aws_iam_role.socket_api_role.name
   policy_arn = aws_iam_policy.vpc_access_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "attachment2" {
+  role       = aws_iam_role.socket_api_role.name
+  policy_arn = aws_iam_policy.lambda_invoke_policy.arn
 }
 
 resource "aws_ssm_parameter" "socket_role_arn" {
@@ -110,8 +132,10 @@ resource "aws_ssm_parameter" "socket_role_arn" {
   value       = "${aws_iam_role.socket_api_role.arn}"
 }
 
+######## TODO: NEED TO REWORK THIS INTO INDIVIDUAL VARS
 
 resource "aws_ssm_parameter" "private_subnets" {
+  depends_on = [module.subnets]
   for_each    = toset(module.subnets.private_subnet_ids)
   type = "String"
   name        = "/lambda/subnet/VPC_SUBNET${index(module.subnets.private_subnet_ids, each.value) + 1}"
