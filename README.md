@@ -16,7 +16,7 @@ npm i
 serverless deploy
 ```
 
-### Start UI (wip)
+### Start UI
 
 ```
 cd ui
@@ -32,7 +32,7 @@ npm run dev
 - [x] Share terraform outputs with serverless via ssm
 - [x] Verify lambda connection to elasticache
 - [x] Code lambda websocket configs
-- [ ] Connect UI to websocket
+- [x] Connect UI to websocket
 - [ ] Configure Cognito terraform
 - [ ] Authenticate websocket lambdas
 - [ ] Add auth to UI
