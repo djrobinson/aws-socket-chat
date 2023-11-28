@@ -1,17 +1,59 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import useWebSocket, { ReadyState } from "react-use-websocket";
+
 export default function Home() {
+  //Public API that will echo messages sent to it back to the client
+  const [socketUrl, setSocketUrl] = useState("wss://echo.websocket.org");
+  const [messageHistory, setMessageHistory] = useState([]);
+
+  const { sendMessage, lastMessage, readyState } = useWebSocket(socketUrl);
+
+  useEffect(() => {
+    if (lastMessage !== null) {
+      setMessageHistory((prev) => prev.concat(lastMessage));
+    }
+  }, [lastMessage, setMessageHistory]);
+
+  const handleClickChangeSocketUrl = useCallback(
+    () =>
+      setSocketUrl("wss://0af3w0tlla.execute-api.us-west-2.amazonaws.com/dev"),
+    []
+  );
+
+  const handleClickSendMessage = useCallback(() => sendMessage("Hello"), []);
+
+  const connectionStatus = {
+    [ReadyState.CONNECTING]: "Connecting",
+    [ReadyState.OPEN]: "Open",
+    [ReadyState.CLOSING]: "Closing",
+    [ReadyState.CLOSED]: "Closed",
+    [ReadyState.UNINSTANTIATED]: "Uninstantiated",
+  }[readyState];
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <div className="flex flex-col items-center justify-center">
-          <h1 className="text-5xl font-bold text-center">TODO</h1>
-          <p className="mt-4 text-center">
-            Lorem ipsum dolor sit amet consectetur adipisicing elit. Delectus
-            culpa nobis nesciunt possimus eos labore necessitatibus iure error
-            maxime voluptatem. Rem, quis. Ipsum, sint corporis cupiditate quos
-            in consectetur rem?
-          </p>
-        </div>
-      </div>
-    </main>
+    <div>
+      <p>
+        <button onClick={handleClickChangeSocketUrl}>
+          Click Me to change Socket Url
+        </button>
+      </p>
+      <p>
+        <button
+          onClick={handleClickSendMessage}
+          disabled={readyState !== ReadyState.OPEN}
+        >
+          Click Me to send Hello
+        </button>
+      </p>
+      <p>The WebSocket is currently {connectionStatus}</p>
+      {lastMessage ? <p>Last message: {lastMessage.data}</p> : null}
+      <ul>
+        {messageHistory.map((message, idx) => (
+          <p key={idx}>{message ? message.data : null}</p>
+        ))}
+      </ul>
+    </div>
   );
 }

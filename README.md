@@ -16,7 +16,7 @@ npm i
 serverless deploy
 ```
 
-### Start ui
+### Start UI (wip)
 
 ```
 cd ui
