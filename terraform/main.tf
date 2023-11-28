@@ -1,250 +1,212 @@
 provider "aws" {
-  region = local.region
+  region = "us-west-2"
 }
 
-data "aws_caller_identity" "current" {}
-data "aws_availability_zones" "available" {}
+module "this" {
+  source  = "cloudposse/label/null"
+  version = "0.25.0"
+}
 
-locals {
-  name    = "complete-postgresql"
-  region  = "us-west-2"
+module "vpc" {
+  source                  = "cloudposse/vpc/aws"
+  name                    = "socket-auction-vpc"
+  version                 = "2.1.1"
+  ipv4_primary_cidr_block = "10.0.0.0/16"
 
-  vpc_cidr = "10.0.0.0/16"
-  azs      = slice(data.aws_availability_zones.available.names, 0, 3)
+  context = module.this.context
+}
+
+################# Resources below enable lambda access to elasticache, ssm vars used in serverless.yml ###########
+
+# What should ingress be in this case?
+resource "aws_security_group" "ws_lambda_sg" {
+  name        = "ws_lambda_sg"
+  description = "Allow TLS inbound traffic"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    description     = "TLS from VPC"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [module.vpc.vpc_default_security_group_id]
+  }
+
+  egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
 
   tags = {
-    Name       = var.name
-    Example    = var.name
-    Repository = "https://github.com/terraform-aws-modules/terraform-aws-rds"
+    Name = "ws_lambda_sg"
   }
 }
 
-################################################################################
-# RDS Module
-################################################################################
+resource "aws_ssm_parameter" "lambda_sg_ssm" {
+  name        = "/lambda/sg/AWS_SG"
+  type        = "String"
+  description = "SG for lambda"
+  value       = aws_security_group.ws_lambda_sg.id
+}
 
-module "db" {
-  source  = "terraform-aws-modules/rds/aws"
 
-  identifier = var.name
 
-  # All available versions: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html#PostgreSQL.Concepts
-  engine               = "postgres"
-  engine_version       = "14"
-  family               = "postgres14" # DB parameter group
-  major_engine_version = "14"         # DB option group
-  instance_class       = "db.t4g.small"
-
-  allocated_storage     = 20
-  max_allocated_storage = 100
-
-  # NOTE: Do NOT use 'user' as the value for 'username' as it throws:
-  # "Error creating DB Instance: InvalidParameterValue: MasterUsername
-  # user cannot be used as it is a reserved word used by the engine"
-  db_name  = "completePostgresql"
-  username = "complete_postgresql"
-  port     = 5432
-
-  multi_az               = true
-  db_subnet_group_name   = module.vpc.database_subnet_group
-  vpc_security_group_ids = [module.security_group.security_group_id]
-
-  maintenance_window              = "Mon:00:00-Mon:03:00"
-  backup_window                   = "03:00-06:00"
-  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
-  create_cloudwatch_log_group     = true
-
-  backup_retention_period = 1
-  skip_final_snapshot     = true
-  deletion_protection     = false
-
-  performance_insights_enabled          = true
-  performance_insights_retention_period = 7
-  create_monitoring_role                = true
-  monitoring_interval                   = 60
-  monitoring_role_name                  = "example-monitoring-role-name"
-  monitoring_role_use_name_prefix       = true
-  monitoring_role_description           = "Description for monitoring role"
-
-  parameters = [
+resource "aws_iam_role" "socket_api_role" {
+  name               = "SocketAuctionApiRole"
+  assume_role_policy = <<EOF
+{ 
+  "Version": "2012-10-17",
+  "Statement": [
     {
-      name  = "autovacuum"
-      value = 1
-    },
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+}
+
+
+resource "aws_iam_policy" "lambda_invoke_policy" {
+  name = "lambda_invoke_policy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        "Action" : [
+          "execute-api:Invoke",
+          "execute-api:ManageConnections"
+        ],
+        "Resource" : "arn:aws:execute-api:*:*:*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "vpc_access_policy" {
+  name = "vpc_access_policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        "Action" : [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "ec2:CreateNetworkInterface",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DeleteNetworkInterface",
+          "ec2:AssignPrivateIpAddresses",
+          "ec2:UnassignPrivateIpAddresses"
+        ],
+        "Resource" : "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "attachment1" {
+  role       = aws_iam_role.socket_api_role.name
+  policy_arn = aws_iam_policy.vpc_access_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "attachment2" {
+  role       = aws_iam_role.socket_api_role.name
+  policy_arn = aws_iam_policy.lambda_invoke_policy.arn
+}
+
+resource "aws_ssm_parameter" "socket_role_arn" {
+  type        = "String"
+  name        = "/lambda/role/socket"
+  description = "subnets that lambdas must attach to"
+  value       = aws_iam_role.socket_api_role.arn
+}
+
+resource "aws_ssm_parameter" "private_subnet1" {
+  depends_on  = [module.subnets]
+  type        = "String"
+  name        = "/lambda/subnet/VPC_SUBNET1"
+  description = "subnets that lambdas must attach to"
+  value       = module.subnets.private_subnet_ids[0]
+}
+
+resource "aws_ssm_parameter" "private_subnet2" {
+  depends_on  = [module.subnets]
+  type        = "String"
+  name        = "/lambda/subnet/VPC_SUBNET2"
+  description = "subnets that lambdas must attach to"
+  value       = module.subnets.private_subnet_ids[1]
+}
+
+resource "aws_ssm_parameter" "private_subnet3" {
+  depends_on  = [module.subnets]
+  type        = "String"
+  name        = "/lambda/subnet/VPC_SUBNET3"
+  description = "subnets that lambdas must attach to"
+  value       = module.subnets.private_subnet_ids[2]
+}
+
+resource "aws_ssm_parameter" "private_subnet4" {
+  depends_on  = [module.subnets]
+  type        = "String"
+  name        = "/lambda/subnet/VPC_SUBNET4"
+  description = "subnets that lambdas must attach to"
+  value       = module.subnets.private_subnet_ids[3]
+}
+
+################# Lambda stuff above ###########
+
+
+module "subnets" {
+  source  = "cloudposse/dynamic-subnets/aws"
+  version = "2.4.1"
+
+  availability_zones   = []
+  vpc_id               = module.vpc.vpc_id
+  igw_id               = [module.vpc.igw_id]
+  nat_gateway_enabled  = true
+  nat_instance_enabled = false
+
+  context = module.this.context
+}
+
+module "redis" {
+  source               = "../terraform-aws-elasticache-redis"
+  description          = "testing-elasticache"
+  replication_group_id = "testing-elasticache-rg"
+
+  availability_zones         = []
+  vpc_id                     = module.vpc.vpc_id
+  allowed_security_group_ids = [module.vpc.vpc_default_security_group_id, aws_security_group.ws_lambda_sg.id]
+  subnets                    = module.subnets.private_subnet_ids
+  cluster_size               = 2
+  instance_type              = "cache.t3.micro"
+  apply_immediately          = true
+  automatic_failover_enabled = false
+
+  parameter = [
     {
-      name  = "client_encoding"
-      value = "utf8"
+      name  = "notify-keyspace-events"
+      value = "lK"
     }
   ]
 
-  tags = local.tags
-  db_option_group_tags = {
-    "Sensitive" = "low"
-  }
-  db_parameter_group_tags = {
-    "Sensitive" = "low"
-  }
-}
-
-module "db_default" {
-  source  = "terraform-aws-modules/rds/aws"
-
-  identifier                     = "${var.name}-default"
-  instance_use_identifier_prefix = true
-
-  create_db_option_group    = false
-  create_db_parameter_group = false
-
-  # All available versions: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html#PostgreSQL.Concepts
-  engine               = "postgres"
-  engine_version       = "14"
-  family               = "postgres14" # DB parameter group
-  major_engine_version = "14"         # DB option group
-  instance_class       = "db.t4g.small"
-
-  allocated_storage = 20
-
-  # NOTE: Do NOT use 'user' as the value for 'username' as it throws:
-  # "Error creating DB Instance: InvalidParameterValue: MasterUsername
-  # user cannot be used as it is a reserved word used by the engine"
-  db_name  = "completePostgresql"
-  username = "complete_postgresql"
-  port     = 5432
-
-  db_subnet_group_name   = module.vpc.database_subnet_group
-  vpc_security_group_ids = [module.security_group.security_group_id]
-
-  maintenance_window      = "Mon:00:00-Mon:03:00"
-  backup_window           = "03:00-06:00"
-  backup_retention_period = 0
-
-  tags = local.tags
-}
-
-module "db_disabled" {
-  source  = "terraform-aws-modules/rds/aws"
-
-  identifier = "${var.name}-disabled"
-
-  create_db_instance        = false
-  create_db_parameter_group = false
-  create_db_option_group    = false
-}
-
-################################################################################
-# Supporting Resources
-################################################################################
-
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"
-
-  name = var.name
-  cidr = local.vpc_cidr
-
-  azs              = local.azs
-  public_subnets   = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k)]
-  private_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 3)]
-  database_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 6)]
-
-  create_database_subnet_group = true
-
-  tags = local.tags
-}
-
-module "security_group" {
-  source  = "terraform-aws-modules/security-group/aws"
-  version = "~> 5.0"
-
-  name        = var.name
-  description = "Complete PostgreSQL example security group"
-  vpc_id      = module.vpc.vpc_id
-
-  # ingress
-  ingress_with_cidr_blocks = [
-    {
-      from_port   = 5432
-      to_port     = 5432
-      protocol    = "tcp"
-      description = "PostgreSQL access from within VPC"
-      cidr_blocks = module.vpc.vpc_cidr_block
-    },
-  ]
-
-  tags = local.tags
+  context = module.this.context
 }
 
 
-
-################################################################################
-# COGNITO
-################################################################################
-
-
-
-module "aws_cognito" {
-
-  source  = "lgallard/cognito-user-pool/aws"
-  version = "0.24.0"
-  user_pool_name                                     = "simple_extended_pool"
-  alias_attributes                                   = ["email", "phone_number"]
-  auto_verified_attributes                           = ["email"]
-  sms_authentication_message                         = "Your username is {username} and temporary password is {####}."
-  sms_verification_message                           = "This is the verification message {####}."
-  password_policy_require_lowercase                  = false
-  password_policy_minimum_length                     = 10
-  user_pool_add_ons_advanced_security_mode           = "OFF"
-  verification_message_template_default_email_option = "CONFIRM_WITH_CODE"
-
-  # schemas
-  schemas = [
-    {
-      attribute_data_type      = "Boolean"
-      developer_only_attribute = false
-      mutable                  = true
-      name                     = "available"
-      required                 = false
-    },
-  ]
-
-  string_schemas = [
-    {
-      attribute_data_type      = "String"
-      developer_only_attribute = false
-      mutable                  = false
-      name                     = "email"
-      required                 = true
-
-      string_attribute_constraints = {
-        min_length = 7
-        max_length = 15
-      }
-    },
-  ]
-
-  # client
-  client_name                                 = "client0"
-  client_allowed_oauth_flows_user_pool_client = false
-  client_callback_urls                        = ["http://localhost:3000/callback"]
-  client_default_redirect_uri                 = "http://localhost:3000/callback"
-  client_read_attributes                      = ["email"]
-  client_refresh_token_validity               = 30
-
-
-  # user_group
-  user_group_name        = "mygroup"
-  user_group_description = "My group"
-
-  # ressource server
-  resource_server_identifier        = "http://localhost:3000"
-  resource_server_name              = "localhost"
-  resource_server_scope_name        = "scope"
-  resource_server_scope_description = "a Sample Scope Description for mydomain"
-
-  # tags
-  tags = {
-    Owner       = "infra"
-    Environment = "dev"
-    Terraform   = true
-  }
+resource "aws_ssm_parameter" "lambda_redis_cluster_ssm" {
+  name        = "/elasticache/redis/REDIS_CLUSTER_ENDPOINT"
+  type        = "String"
+  description = "Redis cluster for lambda"
+  value       = module.redis.endpoint
 }
